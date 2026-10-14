@@ -135,6 +135,7 @@ def main():
         "--disable-outdevs",
         "--disable-libxml2",
         "--disable-lzma",
+        "--disable-iconv",  # glibc's iconv is found even with --disable-autodetect
         "--enable-libdav1d",
         "--enable-zlib",
         "--disable-filter=gfxcapture",
@@ -144,6 +145,8 @@ def main():
     if plat == "Windows" and not is_arm:
         # link the GCC runtime statically, so no libgcc_s_seh-1.dll ships
         os.environ["LDFLAGS"] = ("-static-libgcc " + os.environ.get("LDFLAGS", "")).strip()
+        # and winpthreads (avutil's clock functions), so no libwinpthread-1.dll ships
+        ffmpeg_package.build_arguments.append("--extra-libs=-Wl,-Bstatic -lwinpthread -Wl,-Bdynamic")
     if plat == "Darwin":
         ffmpeg_package.build_arguments.append("--extra-ldflags=-Wl,-ld_classic")
     if plat == "Windows" and is_arm:
@@ -202,7 +205,6 @@ def main():
             )
         else:
             dll_names = (
-                "libwinpthread-1.dll",
                 "zlib1.dll",
             )
         for name in dll_names:

@@ -121,7 +121,7 @@ def check_build(build_dir: str, report_path: str) -> None:
 # the shared libraries the vendor folder may hold (FFmpeg's seven + dav1d + zlib on Windows)
 OWN_LIBRARY = re.compile(
     r"^(lib)?(avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale|dav1d)[-.]"
-    r"|^zlib1\.dll$|^libwinpthread-1\.dll$",
+    r"|^zlib1\.dll$",
     re.I,
 )
 LINUX_SYSTEM = re.compile(r"^(libc|libm|libpthread|libdl|librt|libz)\.so\.\d+$|^ld-linux")
