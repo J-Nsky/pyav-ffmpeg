@@ -57,6 +57,10 @@ def main() -> None:
         "auditwheel into the PyAV wheel); on Windows MSYS2's mingw-w64-x86_64-zlib (zlib1.dll).",
         "zlib licence.",
         "",
+        "Windows only: MinGW-w64's winpthreads (MIT licence) and the GCC runtime (GPL-3.0 with",
+        "the GCC Runtime Library Exception) are linked statically into the libraries; their",
+        "sources: MSYS2's mingw-w64-x86_64-winpthreads and mingw-w64-x86_64-gcc packages.",
+        "",
         "Configuration per platform (FFmpeg's own FFMPEG_CONFIGURATION and licence string)",
     ]
     for report in sorted(glob.glob(os.path.join(artifacts, "*.configure.txt"))):
