@@ -53,9 +53,8 @@ def main() -> None:
         out += [f"  {name}", f"    from   : {package.source_url}", f"    sha256 : {digest}", f"    note   : {role}"]
     out += [
         "",
-        "zlib: the system's on macOS (/usr/lib/libz.1.dylib) and Linux (libz.so.1, bundled by",
-        "auditwheel into the PyAV wheel); on Windows MSYS2's mingw-w64-x86_64-zlib (zlib1.dll).",
-        "zlib licence.",
+        "zlib: the system's on macOS (/usr/lib/libz.1.dylib) and Linux (libz.so.1, not bundled",
+        "into the PyAV wheel); on Windows MSYS2's mingw-w64-x86_64-zlib (zlib1.dll). zlib licence.",
         "",
         "Windows only: MinGW-w64's winpthreads (MIT licence) and the GCC runtime (GPL-3.0 with",
         "the GCC Runtime Library Exception) are linked statically into the libraries; their",

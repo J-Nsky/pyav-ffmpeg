@@ -100,6 +100,9 @@ def problems(build_dir: str, configure_path: str) -> tuple[list[str], dict[str, 
         "threads": "pthreads" if config.get("HAVE_PTHREADS") == "1"
         else "w32threads" if config.get("HAVE_W32THREADS") == "1" else "none",
         "network": config.get("CONFIG_NETWORK", "?"),
+        # flags set in the environment (Windows: -static-libgcc) are not in
+        # FFMPEG_CONFIGURATION
+        "LDFLAGS (environment)": os.environ.get("LDFLAGS", ""),
     }
     return found, summary
 
@@ -120,8 +123,8 @@ def check_build(build_dir: str, report_path: str) -> None:
 
 # the shared libraries the vendor folder may hold (FFmpeg's seven + dav1d + zlib on Windows)
 OWN_LIBRARY = re.compile(
-    r"^(lib)?(avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale|dav1d)[-.]"
-    r"|^zlib1\.dll$",
+    r"^(lib)?(avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale|dav1d|zlib1)"
+    r"(-[0-9a-f]{8,})?((\.\d+)*\.dylib|\.so(\.\d+)*|(-\d+)?(-[0-9a-f]{32})?\.dll)$",
     re.I,
 )
 LINUX_SYSTEM = re.compile(r"^(libc|libm|libpthread|libdl|librt|libz)\.so\.\d+$|^ld-linux")
