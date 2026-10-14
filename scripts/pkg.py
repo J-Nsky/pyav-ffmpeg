@@ -195,9 +195,9 @@ ffmpeg_package = Package(
     sha256="464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
 )
 
-all_packages: list[Package] = [ffmpeg_package]
-all_packages.extend(codec_group)
-all_packages.extend(gnutls_group) 
-all_packages.extend(
-    [nasm_package, alsa_package, nvheaders_package, amfheaders_package, libvpl_package]
-)
+# MDB LGPL variant: only what build-ffmpeg.py builds (nasm is a build tool for dav1d on x86)
+all_packages: list[Package] = [
+    ffmpeg_package,
+    *[p for p in codec_group if p.name == "dav1d"],
+    nasm_package,
+]

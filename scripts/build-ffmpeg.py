@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 
+import lgpl_check
 from cibuildpkg import Builder, Package, fetch, log_group, run
 from pkg import *
 
@@ -94,18 +95,6 @@ def main():
     is_arm = machine in {"arm64", "aarch64"} or is_arm32
     is_riscv = machine in {"riscv64"}
 
-    use_alsa = plat == "Linux"
-    # CUDA, AMF, and Intel VPL are not available on ARM64 Windows
-    use_cuda = plat in {"Linux", "Windows"} and not is_arm and not is_riscv
-    use_amf = plat in {"Linux", "Windows"} and not is_arm and not is_riscv
-
-    # Use Intel VPL (Video Processing Library) if supported to enable Intel QSV (Quick Sync Video)
-    # hardware encoders/decoders on modern integrated and discrete Intel GPUs.
-    use_libvpl = plat in {"Linux", "Windows"} and not is_arm
-
-    # Use GnuTLS only on Linux, FFmpeg has native TLS backends for macOS and Windows.
-    use_gnutls = plat == "Linux"
-
     output_dir = os.path.abspath("output")
     if plat == "Linux" and os.environ.get("CIBUILDWHEEL") == "1":
         output_dir = "/output"
@@ -135,119 +124,45 @@ def main():
     with log_group("install python packages"):
         run(["pip", "install", "cmake", "meson", "ninja"])
 
+    # MDB LGPL-only variant: no GPL / version3 libraries, no encoders, no network, no devices.
     ffmpeg_package.build_arguments = [
         "--disable-programs",
         "--disable-doc",
+        "--disable-autodetect",
+        "--disable-network",
+        "--disable-encoders",
+        "--disable-indevs",
+        "--disable-outdevs",
         "--disable-libxml2",
-        "--disable-lzma",  # or re-add xz package
-        "--disable-libtheora",
-        "--disable-libfreetype",
-        "--disable-libfontconfig",
-        "--disable-libbluray",
-        "--disable-libopenjpeg",
-        (
-            "--enable-mediafoundation"
-            if plat == "Windows"
-            else "--disable-mediafoundation"
-        ),
-        "--enable-version3",
-        "--enable-alsa" if use_alsa else "--disable-alsa",
-        "--enable-gnutls" if use_gnutls else "--disable-gnutls",
+        "--disable-lzma",
         "--enable-libdav1d",
-        "--enable-libmp3lame",
-        "--enable-libopencore-amrnb",
-        "--enable-libopencore-amrwb",
-        "--enable-libopus",
-        "--enable-libsvtav1",
-        "--enable-libvpx",
-        "--enable-libwebp",
-        "--enable-libxcb" if plat == "Linux" else "--disable-libxcb",
         "--enable-zlib",
+        "--disable-filter=gfxcapture",
+        # threading made explicit (w32threads are only autodetected)
+        "--enable-w32threads" if plat == "Windows" else "--enable-pthreads",
     ]
-
-    # x264/x265 are skipped on 32-bit ARM (armv7)
-    if not is_arm32:
-        ffmpeg_package.build_arguments.extend(
-            ["--enable-libx264", "--enable-libx265"]
-        )
-
-    if use_cuda:
-        ffmpeg_package.build_arguments.extend(["--enable-nvenc", "--enable-nvdec"])
-
-    if use_amf:
-        ffmpeg_package.build_arguments.append("--enable-amf")
-
-    if use_libvpl:
-        ffmpeg_package.build_arguments.append("--enable-libvpl")
-
+    if plat == "Windows" and not is_arm:
+        # link the GCC runtime statically, so no libgcc_s_seh-1.dll ships
+        os.environ["LDFLAGS"] = ("-static-libgcc " + os.environ.get("LDFLAGS", "")).strip()
     if plat == "Darwin":
-        ffmpeg_package.build_arguments.extend(
-            [
-                "--enable-videotoolbox",
-                "--enable-audiotoolbox",
-                "--extra-ldflags=-Wl,-ld_classic",
-            ]
-        )
-
-    if plat == "Linux" and "RUNNER_ARCH" in os.environ:
-        # FFmpeg expects "arm" for 32-bit ARM, not the uname "armv7l".
-        ff_arch = "arm" if is_arm32 else machine
-        ffmpeg_package.build_arguments.extend(
-            [
-                "--enable-cross-compile",
-                "--target-os=linux",
-                "--arch=" + ff_arch,
-                "--cc=/opt/clang/bin/clang",
-                "--cxx=/opt/clang/bin/clang++",
-            ]
-        )
-
+        ffmpeg_package.build_arguments.append("--extra-ldflags=-Wl,-ld_classic")
     if plat == "Windows" and is_arm:
-        ffmpeg_package.build_arguments.extend(
-            ["--cc=clang", "--cxx=clang++", "--arch=aarch64"]
-        )
-
-    ffmpeg_package.build_arguments.extend(
-        [
-            "--disable-encoder=avui,dca,mlp,opus,s302m,sonic,sonic_ls,truehd",
-            "--disable-decoder=sonic",
-            "--disable-libjack",
-            "--disable-indev=jack",
-            "--disable-filter=gfxcapture",  # gfxcapture_winrt C++ causes build failure on Win Arm
-        ]
-    )
+        ffmpeg_package.build_arguments.extend(["--cc=clang", "--cxx=clang++", "--arch=aarch64"])
 
     packages = []
     if plat != "Darwin" and "nasm" not in available_tools and machine in {"x86_64", "amd64", "i686", "i386"}:
         packages.append(nasm_package)
-    if use_alsa:
-        packages += [alsa_package]
-    if use_cuda:
-        packages += [nvheaders_package]
-    if use_amf:
-        packages += [amfheaders_package]
-    if use_libvpl:
-        packages += [libvpl_package]
-
-    if use_gnutls:
-        packages += gnutls_group
-    if is_arm32:
-        # x264/x265 are not built on 32-bit ARM (armv7)
-        packages += [p for p in codec_group if p.name not in {"x264", "x265"}]
-    else:
-        packages += codec_group
+    packages += [p for p in codec_group if p.name == "dav1d"]
     packages += [ffmpeg_package]
-
-    # Disable runtime CPU detection for opus on Windows ARM64
-    # (no CPU detection method available for this platform)
-    if plat == "Windows" and is_arm:
-        for pkg in packages:
-            if pkg.name == "opus":
-                pkg.build_arguments.append("--disable-rtcd")
-                break
 
     for package in packages:
         builder.build(package, for_builder=package.name == "nasm")
+
+    # stop here unless FFmpeg came out LGPL-only (scripts/lgpl_check.py)
+    lgpl_check.check_build(
+        os.path.join(builder.build_dir, "ffmpeg", ffmpeg_package.build_dir),
+        os.path.join(output_dir, make_tarball_name() + ".configure.txt"),
+    )
 
     if plat == "Windows":
         # fix .lib files being installed in the wrong directory
@@ -287,9 +202,6 @@ def main():
             )
         else:
             dll_names = (
-                "libgcc_s_seh-1.dll",
-                "libiconv-2.dll",
-                "libstdc++-6.dll",
                 "libwinpthread-1.dll",
                 "zlib1.dll",
             )
@@ -303,6 +215,8 @@ def main():
         libraries = glob.glob(os.path.join(dest_dir, "lib", "*.so"))
     elif plat == "Windows":
         libraries = glob.glob(os.path.join(dest_dir, "bin", "*.dll"))
+
+    lgpl_check.check_libraries(libraries)
 
     if plat == "Darwin":
         run(["strip", "-x", "-S"] + libraries)

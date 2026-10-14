@@ -1,6 +1,15 @@
 pyav-ffmpeg
 ===========
 
+.. note::
+
+   **This fork (branch ``lgpl``) builds FFmpeg LGPL-2.1-or-later only** for the PyAV wheels of
+   My Dancing Book: unmodified FFmpeg 8.1.2 with dav1d and zlib, no GPL / nonfree / version3
+   parts, no encoders, no network, no devices; macOS arm64, manylinux x86_64 and Windows x86_64.
+   ``scripts/lgpl_check.py`` stops the build otherwise. Each release carries the source tarballs
+   and ``SOURCE.txt`` (the exact configuration per platform and how to rebuild). The list below
+   describes upstream's builds.
+
 This project provides binary builds of FFmpeg and its dependencies for `PyAV`_.
 These builds are used in order to provide binary wheels of PyAV, allowing
 users to easily install PyAV without perform error-prone compilations.

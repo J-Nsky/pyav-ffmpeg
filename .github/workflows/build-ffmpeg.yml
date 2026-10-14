@@ -1,13 +1,7 @@
 name: build-ffmpeg
 on:
   push:
-    branches: main
-    paths-ignore:
-      - '**.md'
-      - '**.rst'
-      - '**.txt'
-  pull_request:
-    branches: main
+    branches: lgpl
     paths-ignore:
       - '**.md'
       - '**.rst'
@@ -50,12 +44,6 @@ jobs:
           - os: macos-14
             arch: arm64
             shell: bash
-          - os: macos-15-intel
-            arch: x86_64
-            shell: bash
-          - os: ubuntu-24.04-arm
-            arch: aarch64
-            shell: bash
           - os: ubuntu-24.04
             arch: x86_64
             shell: bash
@@ -64,11 +52,6 @@ jobs:
             shell: 'msys2 {0}'
             msys_prefix: mingw-w64-x86_64
             msys_system: MINGW64
-          - os: windows-11-arm
-            arch: arm64
-            shell: 'msys2 {0}'
-            msys_prefix: mingw-w64-clang-aarch64
-            msys_system: CLANGARM64
     defaults:
       run:
         shell: ${{ matrix.shell }}
@@ -85,80 +68,30 @@ jobs:
       - name: Set deployment target
         if: runner.os == 'macOS'
         run: |
-          if [ "${{ matrix.arch }}" = "x86_64" ]; then
-            echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> $GITHUB_ENV
-          else
-            echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
-          fi
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
       - name: Install packages for macOS
         if: runner.os == 'macOS'
         run: |
-          brew unlink gettext libidn2 libpng libtiff libunistring libx11 libxcb libxdmcp
-          if [ "${{ matrix.os }}" = "macos-15-intel" ]; then
-            brew install nasm
-          fi
+          brew unlink gettext libidn2 libpng libtiff libunistring libx11 libxcb libxdmcp || true
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
         with:
           install: >-
             base-devel
-            openssl-devel
             ${{ matrix.msys_prefix }}-pkgconf
-            ${{ matrix.msys_system == 'CLANGARM64' && format('{0}-clang', matrix.msys_prefix) || format('{0}-gcc {0}-nasm', matrix.msys_prefix) }}
+            ${{ matrix.msys_prefix }}-gcc
+            ${{ matrix.msys_prefix }}-nasm
+            ${{ matrix.msys_prefix }}-zlib
           msystem: ${{ matrix.msys_system }}
           path-type: inherit
       - name: Build FFmpeg
         env:
-          CIBW_ARCHS: ${{ matrix.msys_system == 'CLANGARM64' && 'ARM64' || (matrix.msys_prefix && 'AMD64' || matrix.arch) }}
+          CIBW_ARCHS: ${{ matrix.msys_prefix && 'AMD64' || matrix.arch }}
           CIBW_BEFORE_BUILD: python scripts/build-ffmpeg.py /tmp/vendor
           CIBW_BEFORE_BUILD_WINDOWS: python scripts\build-ffmpeg.py C:\cibw\vendor
           CIBW_BUILD: cp311-*
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: LD_LIBRARY_PATH=/tmp/vendor/lib:$LD_LIBRARY_PATH auditwheel repair --exclude libmvec.so.1 --exclude libmvec-2.so --exclude libmvec.so --exclude libmvec -w {dest_dir} {wheel}
-          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair --add-path C:\cibw\vendor\bin -w {dest_dir} {wheel}
-          CIBW_TEST_COMMAND: python -c "import dummy"
-        run: |
-          pip install cibuildwheel delvewheel
-          cibuildwheel --output-dir output
-          rm -f output/*.whl
-      - name: Upload FFmpeg
-        uses: actions/upload-artifact@v6
-        with:
-          name: output-${{ matrix.os }}
-          path: output/
-
-  cross-build:
-    needs: fan
-    # armv7l is cross-compiled from an aarch64 host with the arm-linux-gnueabihf
-    # toolchain; the other arches cross-compile from x86_64.
-    runs-on: ${{ matrix.arch == 'armv7l' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        build: [ "manylinux_", "musllinux_" ]
-        # arch: [ "loongarch64", "ppc64le", "riscv64", "s390x" ]
-        arch: [ "armv7l", "ppc64le", "riscv64" ]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-      - name: Get sources
-        uses: actions/download-artifact@v8
-        with:
-          name: deps
-          path: source
-      - uses: docker/setup-qemu-action@v4
-      - name: Build FFmpeg
-        env:
-          CIBW_ARCHS: ${{ matrix.arch }}
-          CIBW_BEFORE_ALL_LINUX: ./scripts/install-static-clang.sh
-          CIBW_BEFORE_BUILD_LINUX: python scripts/build-ffmpeg.py /tmp/vendor
-          CIBW_BUILD: cp311-${{ matrix.build }}${{ matrix.arch }}
-          CIBW_ENVIRONMENT_LINUX: >
-            CC="/opt/clang/bin/clang"
-            CXX="/opt/clang/bin/clang++"
-            LDFLAGS="-fuse-ld=lld"
-          CIBW_ENVIRONMENT_PASS_LINUX: RUNNER_ARCH
+          # manylinux only (fetch-vendor's curl has no --fail, a missing musllinux tarball would break tar)
+          CIBW_SKIP: "*musllinux*"
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: LD_LIBRARY_PATH=/tmp/vendor/lib:$LD_LIBRARY_PATH auditwheel repair --exclude libmvec.so.1 --exclude libmvec-2.so --exclude libmvec.so --exclude libmvec -w {dest_dir} {wheel}
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair --add-path C:\cibw\vendor\bin -w {dest_dir} {wheel}
           CIBW_TEST_COMMAND: python -c "import dummy"
@@ -169,23 +102,34 @@ jobs:
       - name: Upload FFmpeg
         uses: actions/upload-artifact@v7
         with:
-          name: output-${{ matrix.build }}${{ matrix.arch }}
+          name: output-${{ matrix.os }}
           path: output/
 
   upload-release:
     if: github.event_name == 'release'
-    needs: [build, cross-build]
+    needs: [fan, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - uses: actions/checkout@v7
+      - name: Download the builds
         uses: actions/download-artifact@v8
         with:
           path: artifacts/
           pattern: output-*
           merge-multiple: true
+      - name: Download the sources
+        uses: actions/download-artifact@v8
+        with:
+          name: deps
+          path: source/
+      - name: Write SOURCE.txt
+        run: python scripts/source_txt.py artifacts source "${{ github.server_url }}/${{ github.repository }}" "${{ github.sha }}" "${{ github.ref_name }}" > SOURCE.txt
       - name: Upload to release
         uses: softprops/action-gh-release@v3
         with:
-          files: artifacts/*.tar.gz
+          files: |
+            artifacts/*.tar.gz
+            source/*
+            SOURCE.txt
