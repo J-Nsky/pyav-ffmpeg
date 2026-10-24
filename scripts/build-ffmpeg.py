@@ -83,12 +83,41 @@ def make_tarball_name() -> str:
     else:
         return "ffmpeg-unknown"
 
+def require_tools(names: list[str]) -> None:
+    """MDB lgpl2: the build never downloads its tools (no `pip install cmake meson ninja`).
+    They come from the system (Ubuntu 26.04 here: apt nasm 3.01-1, meson 1.10.1-1ubuntu2,
+    ninja-build, pkgconf); a missing one stops the build here, loudly."""
+    missing = [name for name in names if shutil.which(name) is None]
+    if missing:
+        sys.exit("build-ffmpeg: missing build tools: " + ", ".join(missing)
+                 + " (install them from the system's package manager; this build never downloads them)")
+
+
+def read_configure_flags(path: str | None) -> list[str]:
+    """MDB lgpl2: the allow-list's ./configure flags, one per line (MyDancingBook
+    tools/ffmpeg/ffmpeg_allowlist.py --flags). They go FIRST (they start with
+    --disable-everything), the LGPL flags below follow."""
+    if not path:
+        return []
+    with open(path, encoding="utf-8") as fp:
+        flags = [line.strip() for line in fp if line.strip() and not line.startswith("#")]
+    bad = [f for f in flags if not f.startswith("--") or " " in f]
+    if bad:
+        sys.exit(f"build-ffmpeg: not a configure flag in {path}: {bad[:3]}")
+    if not flags or flags[0] != "--disable-everything":
+        sys.exit(f"build-ffmpeg: {path} must start with --disable-everything")
+    return flags
+
+
 def main():
     parser = argparse.ArgumentParser("build-ffmpeg")
     parser.add_argument("destination")
+    parser.add_argument("--configure-flags", metavar="FILE",
+                        help="extra ./configure flags, one per line, put first (the allow-list)")
 
     args = parser.parse_args()
     dest_dir = os.path.abspath(args.destination)
+    allowlist_flags = read_configure_flags(args.configure_flags)
 
     machine = platform.machine().lower()
     is_arm32 = machine in {"armv7l", "armv8l", "arm"}
@@ -121,11 +150,19 @@ def main():
         for tool in tools:
             run(["where", tool])
 
-    with log_group("install python packages"):
-        run(["pip", "install", "cmake", "meson", "ninja"])
+    elif shutil.which("nasm"):
+        # MDB lgpl2: a system nasm (Ubuntu 26.04: nasm 3.01-1) is used, never the tarball
+        available_tools.add("nasm")
+
+    # MDB lgpl2: no `pip install cmake meson ninja` (unpinned PyPI) — the system's tools
+    needed = ["meson", "ninja", "pkg-config" if shutil.which("pkg-config") else "pkgconf", "make", "patch"]
+    if plat != "Darwin" and machine in {"x86_64", "amd64", "i686", "i386"}:
+        needed.append("nasm")
+    if plat != "Windows":
+        require_tools(needed)
 
     # MDB LGPL-only variant: no GPL / version3 libraries, no encoders, no network, no devices.
-    ffmpeg_package.build_arguments = [
+    ffmpeg_package.build_arguments = allowlist_flags + [
         "--disable-programs",
         "--disable-doc",
         "--disable-autodetect",

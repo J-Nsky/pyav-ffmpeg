@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import platform
+import shutil
 
 @dataclass(slots=True)
 class Package:
@@ -189,15 +190,21 @@ nasm_package = Package(
     sha256="1412a1c760bbd05db026b6c0d1657affd6631cd0a63cddb6f73cc6d4aa616148",
 )
 
+# MDB lgpl2 (2026-10-24, security P0-3): the signed FFmpeg 9.0.2 release tarball. The SHA-256
+# matches Homebrew, Debian ffmpeg_9.0.2-4.dsc, FreeBSD ports and PyAV-Org/pyav-ffmpeg 9.0.2-1;
+# it carries the MACE6 fix (CVE-2026-66039). MyDancingBook docs/research/2026-10-24-ffmpeg-p03-
+# sources-triple-check.md §8.
 ffmpeg_package = Package(
     name="ffmpeg",
-    source_url="https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
-    sha256="464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
+    source_url="https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+    sha256="8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
 )
 
-# MDB LGPL variant: only what build-ffmpeg.py builds (nasm is a build tool for dav1d on x86)
+# MDB LGPL variant: only what build-ffmpeg.py builds. nasm is a build tool for dav1d / FFmpeg
+# on x86; lgpl2 uses the SYSTEM nasm (Ubuntu 26.04 nasm 3.01-1) when one is on PATH, so the
+# nasm tarball is listed (and fetched by grab.py) only where there is none.
 all_packages: list[Package] = [
     ffmpeg_package,
     *[p for p in codec_group if p.name == "dav1d"],
-    nasm_package,
+    *([] if shutil.which("nasm") else [nasm_package]),
 ]

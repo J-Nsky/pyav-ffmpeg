@@ -1,6 +1,7 @@
 # Utilities for building native library inside cibuildwheel
 
 import contextlib
+import hashlib
 import os
 import platform
 import shutil
@@ -15,7 +16,21 @@ from dataclasses import dataclass, field, replace
 from pkg import *
 
 def fetch(url: str, path: str) -> None:
-    run(["curl", "-L", "-o", path, url])
+    """MDB lgpl2: this recipe never downloads. Every source is put into source/ by hand,
+    after its SHA-256 was checked against two independent sources, and _extract() checks
+    it again against pkg.py before it is unpacked."""
+    raise RuntimeError(
+        f"refusing to download {url} -> {path}: the MDB lgpl2 recipe builds offline from "
+        "verified tarballs in source/ only"
+    )
+
+
+def sha256_of(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fp:
+        for block in iter(lambda: fp.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 @contextlib.contextmanager
@@ -167,19 +182,13 @@ class Builder:
         package_source_path = os.path.join(package_path, package.source_dir)
         package_build_path = os.path.join(package_path, package.build_dir)
 
-        # update config.guess and config.sub
+        # MDB lgpl2: config.guess / config.sub are NOT replaced by unverified copies from
+        # gcc master. FFmpeg ships none and nasm comes from the system; a package that does
+        # ship them uses its own (a newer copy would have to be pinned by commit + SHA-256).
         config_files = ("config.guess", "config.sub")
         for root, dirs, files in os.walk(package_path):
             for name in filter(lambda x: x in config_files, files):
-                script_path = os.path.join(root, name)
-                cache_path = os.path.join(self.source_dir, name)
-                if not os.path.exists(cache_path):
-                    fetch(
-                        f"https://raw.githubusercontent.com/gcc-mirror/gcc/refs/heads/master/{name}",
-                        cache_path,
-                    )
-                shutil.copy(cache_path, script_path)
-                os.chmod(script_path, 0o755)
+                print(f"{package.name}: keeps its own {os.path.relpath(os.path.join(root, name), package_path)}")
 
         # determine configure arguments
         env = self._environment(for_builder=for_builder)
@@ -391,6 +400,14 @@ class Builder:
 
         if not os.path.exists(tarball):
             raise RuntimeError(f"Missing tarbar: {tarball}")
+        # MDB lgpl2: verify EVERY tarball against pkg.py before it is unpacked (upstream
+        # trusted whatever was already in source/)
+        digest = sha256_of(tarball)
+        if digest != package.sha256:
+            raise RuntimeError(
+                f"{package.name}: {tarball} has SHA-256 {digest}, pkg.py pins {package.sha256}"
+            )
+        print(f"{package.name}: SHA-256 {digest} matches pkg.py", flush=True)
 
         with tarfile.open(tarball) as tar:
             # determine common prefix to strip
@@ -404,7 +421,7 @@ class Builder:
 
             # extract archive
             with tempfile.TemporaryDirectory(dir=self.build_dir) as temp_dir:
-                tar.extractall(temp_dir)
+                tar.extractall(temp_dir, filter="data")
                 temp_subdir = os.path.join(temp_dir, prefix)
                 shutil.move(temp_subdir, path)
 

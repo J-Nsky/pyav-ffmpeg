@@ -8,7 +8,7 @@ import hashlib
 import os
 import sys
 
-from pkg import all_packages
+from pkg import all_packages, ffmpeg_package
 
 
 def sha256(path: str) -> str:
@@ -22,7 +22,8 @@ def sha256(path: str) -> str:
 def main() -> None:
     artifacts, source, repo, commit, ref = sys.argv[1:6]
     out = [
-        "FFmpeg 8.1.2 built LGPL-2.1-or-later only, for PyAV (My Dancing Book)",
+        f"FFmpeg {ffmpeg_package.source_url.rsplit('/', 1)[-1][len('ffmpeg-'):-len('.tar.xz')]} built "
+        "LGPL-2.1-or-later only, for PyAV (My Dancing Book)",
         "=" * 70,
         "",
         "These binaries are FFmpeg's shared libraries (avcodec, avdevice, avfilter, avformat,",
@@ -48,10 +49,14 @@ def main() -> None:
         role = {
             "ffmpeg": "LGPL-2.1-or-later (COPYING.LGPLv2.1 inside)",
             "dav1d": "BSD-2-Clause (COPYING inside)",
-            "nasm": "build tool only (assembles dav1d on Linux x86_64); not part of the binaries",
+            "nasm": "build tool only (assembles dav1d / FFmpeg on x86_64); not part of the binaries",
         }.get(package.name, "")
         out += [f"  {name}", f"    from   : {package.source_url}", f"    sha256 : {digest}", f"    note   : {role}"]
     out += [
+        "",
+        "Build tools (not part of the binaries, not linked; from the system's signed archive):",
+        "  Linux x86_64 (lgpl2): Ubuntu 26.04 nasm 3.01-1, meson 1.10.1-1ubuntu2, ninja-build, pkgconf,",
+        "  gcc 15; no tool is downloaded by the recipe.",
         "",
         "zlib: the system's on macOS (/usr/lib/libz.1.dylib) and Linux (libz.so.1, not bundled",
         "into the PyAV wheel); on Windows MSYS2's mingw-w64-x86_64-zlib (zlib1.dll). zlib licence.",
