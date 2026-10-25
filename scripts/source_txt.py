@@ -23,7 +23,7 @@ def main() -> None:
     artifacts, source, repo, commit, ref = sys.argv[1:6]
     out = [
         f"FFmpeg {ffmpeg_package.source_url.rsplit('/', 1)[-1][len('ffmpeg-'):-len('.tar.xz')]} built "
-        "LGPL-2.1-or-later only, for PyAV (My Dancing Book)",
+        "LGPL-2.1-or-later only, for PyAV (MyDancingBook)",
         "=" * 70,
         "",
         "These binaries are FFmpeg's shared libraries (avcodec, avdevice, avfilter, avformat,",
