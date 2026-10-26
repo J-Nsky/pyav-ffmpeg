@@ -7,6 +7,7 @@ import platform
 import shutil
 import struct
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -311,11 +312,19 @@ class Builder:
         prefix = self._prefix(for_builder=for_builder)
         meson_args = ["--libdir=lib", "--prefix=" + prefix]
 
+        # MDB lgpl2 (Windows CI): MDB_MESON_PY = the verified meson sdist's meson.py, run in
+        # place by this interpreter (a Windows process cannot start a script wrapper named
+        # "meson"); otherwise the system's meson. --wrap-mode=nodownload: a missing
+        # dependency stops the build instead of fetching a wrap.
+        meson_py = os.environ.get("MDB_MESON_PY")
+        meson = [sys.executable, meson_py] if meson_py else ["meson"]
+
         # build package
         os.makedirs(package_build_path, exist_ok=True)
         with chdir(package_build_path):
             run(
-                ["meson", package_source_path] + meson_args + package.build_arguments,
+                meson + ["setup", "--wrap-mode=nodownload", package_source_path]
+                + meson_args + package.build_arguments,
                 env=env,
             )
             run(["ninja", "--verbose"], env=env)

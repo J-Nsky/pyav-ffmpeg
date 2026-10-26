@@ -1,135 +1,187 @@
 name: build-ffmpeg
+# MyDancingBook lgpl2, WINDOWS ONLY (RC item G4, 2026-10-26; MyDancingBook
+# docs/research/2026-10-26-windows-lgpl2-wheel-packet.md "Fix prepared").
+#
+# FFmpeg 9.0.2 + dav1d 1.5.3 from the release's own source tarballs, every input
+# SHA-256-checked first (scripts/mdb/inputs.sha256 = pkg.py = MyDancingBook
+# tools/ffmpeg/allowlist.json), built OFFLINE by the recipe (fetch() refuses) with
+# MyDancingBook's allow-list configure flags, proven in this log
+# (scripts/mdb/config_report.py), then ADDED to the existing release 9.0.2-lgpl2 under
+# NEW names only. Nothing here deletes or replaces a release asset.
+# Actions are pinned by full commit SHA (tag in the comment).
 on:
   push:
-    branches: lgpl
-    paths-ignore:
-      - '**.md'
-      - '**.rst'
-      - '**.txt'
-  release:
-    types: [published]
+    branches: [win-lgpl2]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ffmpeg-win-lgpl2
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: 9.0.2-lgpl2
+  SOURCE_BASE: https://github.com/J-Nsky/pyav-ffmpeg/releases/download/9.0.2-lgpl2
+
 jobs:
-  fan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-      - name: Make cache file
-        run: python scripts/cache.py
-      - name: Cache tarballs
-        id: cache-tarballs
-        uses: actions/cache@v5
-        with:
-          path: source
-          key: tarballs-${{ hashFiles('cache.txt') }}
-      - name: Grab
-        if: steps.cache-tarballs.outputs.cache-hit != 'true'
-        run: python scripts/grab.py
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: deps
-          path: source/*
-          if-no-files-found: error
-  build:
-    needs: fan
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            arch: arm64
-            shell: bash
-          - os: ubuntu-24.04
-            arch: x86_64
-            shell: bash
-          - os: windows-latest
-            arch: x86_64
-            shell: 'msys2 {0}'
-            msys_prefix: mingw-w64-x86_64
-            msys_system: MINGW64
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 90
     defaults:
       run:
-        shell: ${{ matrix.shell }}
+        shell: bash
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          python-version: "3.14"
-      - name: Get sources
-        uses: actions/download-artifact@v8
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
-          name: deps
-          path: source
-      - name: Set deployment target
-        if: runner.os == 'macOS'
+          python-version: "3.14.9"
+
+      - name: Inputs (fetched on the runner, every SHA-256 checked)
         run: |
-          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> $GITHUB_ENV
-      - name: Install packages for macOS
-        if: runner.os == 'macOS'
+          set -euo pipefail
+          mkdir -p source tools-dl
+          get() { curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 -o "$2" "$1"; }
+          get "$SOURCE_BASE/ffmpeg-9.0.2.tar.xz" source/ffmpeg-9.0.2.tar.xz
+          get "$SOURCE_BASE/dav1d-1.5.3.tar.bz2" source/dav1d-1.5.3.tar.bz2
+          get https://github.com/mesonbuild/meson/releases/download/1.10.1/meson-1.10.1.tar.gz tools-dl/meson-1.10.1.tar.gz
+          get https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip tools-dl/ninja-win.zip
+          sha256sum -c --strict scripts/mdb/inputs.sha256
+          ls -l source tools-dl
+
+      - name: meson 1.10.1 + ninja 1.13.2 from the checked archives
         run: |
-          brew unlink gettext libidn2 libpng libtiff libunistring libx11 libxcb libxdmcp || true
-      - uses: msys2/setup-msys2@v2
-        if: runner.os == 'Windows'
+          set -euo pipefail
+          python -I -c "import tarfile, zipfile; tarfile.open('tools-dl/meson-1.10.1.tar.gz').extractall('tools-dl', filter='data'); zipfile.ZipFile('tools-dl/ninja-win.zip').extractall('tools-dl/ninja')"
+          test -f tools-dl/meson-1.10.1/meson.py
+          test -f tools-dl/ninja/ninja.exe
+          echo "MDB_MESON_PY=$(cygpath -w "$PWD/tools-dl/meson-1.10.1/meson.py")" >> "$GITHUB_ENV"
+          cygpath -w "$PWD/tools-dl/ninja" >> "$GITHUB_PATH"
+
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e  # v2.33.0
         with:
+          msystem: MINGW64
+          path-type: inherit
+          update: false
           install: >-
             base-devel
-            ${{ matrix.msys_prefix }}-pkgconf
-            ${{ matrix.msys_prefix }}-gcc
-            ${{ matrix.msys_prefix }}-nasm
-            ${{ matrix.msys_prefix }}-zlib
-          msystem: ${{ matrix.msys_system }}
-          path-type: inherit
-      - name: Build FFmpeg
-        env:
-          CIBW_ARCHS: ${{ matrix.msys_prefix && 'AMD64' || matrix.arch }}
-          CIBW_BEFORE_BUILD: python scripts/build-ffmpeg.py /tmp/vendor
-          CIBW_BEFORE_BUILD_WINDOWS: python scripts\build-ffmpeg.py C:\cibw\vendor
-          CIBW_BUILD: cp311-*
-          # manylinux only (fetch-vendor's curl has no --fail, a missing musllinux tarball would break tar)
-          CIBW_SKIP: "*musllinux*"
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: LD_LIBRARY_PATH=/tmp/vendor/lib:$LD_LIBRARY_PATH auditwheel repair --exclude libmvec.so.1 --exclude libmvec-2.so --exclude libmvec.so --exclude libmvec -w {dest_dir} {wheel}
-          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair --add-path C:\cibw\vendor\bin -w {dest_dir} {wheel}
-          CIBW_TEST_COMMAND: python -c "import dummy"
-        run: |
-          pip install cibuildwheel delvewheel
-          cibuildwheel --output-dir output
-          rm -f output/*.whl
-      - name: Upload FFmpeg
-        uses: actions/upload-artifact@v7
-        with:
-          name: output-${{ matrix.os }}
-          path: output/
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-nasm
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-zlib
 
-  upload-release:
-    if: github.event_name == 'release'
-    needs: [fan, build]
-    runs-on: ubuntu-latest
+      - name: Tool versions (msys2 packages are not pinned; this log is their record)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          PY="$(cygpath -u "$pythonLocation")/python.exe"
+          "$PY" -VV
+          test "$("$PY" "$(cygpath -u "$MDB_MESON_PY")" --version | tr -d '\r')" = "1.10.1"
+          test "$(ninja --version | tr -d '\r')" = "1.13.2"
+          echo "meson 1.10.1, ninja 1.13.2"
+          gcc --version | sed -n 1p
+          nasm -v
+          pkg-config --version
+          make --version | sed -n 1p
+          pacman -Q | grep -E '^mingw-w64-x86_64-(gcc|gcc-libs|binutils|crt-git|headers-git|winpthreads|winpthreads-git|libwinpthread-git|nasm|pkgconf|zlib) |^(make|patch) ' || true
+          sha256sum /mingw64/bin/zlib1.dll
+
+      - name: Allow-list configure flags (MyDancingBook's own checker)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          PY="$(cygpath -u "$pythonLocation")/python.exe"
+          "$PY" -I scripts/mdb/ffmpeg_allowlist.py --flags > configure-flags.txt
+          echo "$(wc -l < configure-flags.txt) flags:"
+          cat configure-flags.txt
+          test "$(sed -n 1p configure-flags.txt | tr -d '\r')" = "--disable-everything"
+
+      - name: Build FFmpeg 9.0.2 + dav1d 1.5.3 (offline, from source/)
+        shell: msys2 {0}
+        env:
+          SOURCE_DATE_EPOCH: "0"
+        run: |
+          set -euo pipefail
+          PY="$(cygpath -u "$pythonLocation")/python.exe"
+          "$PY" scripts/build-ffmpeg.py 'C:\cibw\vendor' --configure-flags configure-flags.txt
+
+      - name: Prove the allow-list build (configure's own output + the installed headers)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          PY="$(cygpath -u "$pythonLocation")/python.exe"
+          "$PY" -I scripts/mdb/config_report.py build/ffmpeg/build 'C:\cibw\vendor'
+          echo "[mdb] DLLs in the tarball:"
+          (cd /c/cibw/vendor/bin && sha256sum *.dll)
+          cat output/ffmpeg-windows-x86_64.configure.txt
+          ls -l output
+          (cd output && sha256sum ffmpeg-windows-x86_64.tar.gz) | tee -a "$(cygpath -u "$GITHUB_STEP_SUMMARY")"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ffmpeg-windows-x86_64
+          path: |
+            output/ffmpeg-windows-x86_64.tar.gz
+            output/ffmpeg-windows-x86_64.configure.txt
+            configure-flags.txt
+          if-no-files-found: error
+
+  release:
+    needs: windows
+    if: github.ref == 'refs/heads/win-lgpl2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Download the builds
-        uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          path: artifacts/
-          pattern: output-*
-          merge-multiple: true
-      - name: Download the sources
-        uses: actions/download-artifact@v8
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
-          name: deps
-          path: source/
-      - name: Write SOURCE.txt
-        run: python scripts/source_txt.py artifacts source "${{ github.server_url }}/${{ github.repository }}" "${{ github.sha }}" "${{ github.ref_name }}" > SOURCE.txt
-      - name: Upload to release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            artifacts/*.tar.gz
-            source/*
-            SOURCE.txt
+          name: ffmpeg-windows-x86_64
+          path: artifacts
+
+      - name: The sources again, for SOURCE.txt (SHA-256 checked)
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          for f in ffmpeg-9.0.2.tar.xz dav1d-1.5.3.tar.bz2; do
+            curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 -o "source/$f" "$SOURCE_BASE/$f"
+          done
+          grep ' source/' scripts/mdb/inputs.sha256 | sha256sum -c --strict
+
+      - name: SOURCE-windows-x86_64.txt, the recipe archive, SHA256SUMS
+        run: |
+          set -euo pipefail
+          SHORT="$(git rev-parse --short=7 HEAD)"
+          mkdir -p upload
+          cp artifacts/output/ffmpeg-windows-x86_64.tar.gz upload/
+          python3 scripts/source_txt.py artifacts/output source "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA" "$GITHUB_REF_NAME" > upload/SOURCE-windows-x86_64.txt
+          git archive --format=tar.gz --prefix="pyav-ffmpeg-$SHORT/" -o "upload/pyav-ffmpeg-$SHORT.tar.gz" HEAD
+          (cd upload && sha256sum -- * > ../SHA256SUMS-windows-x86_64.txt)
+          mv SHA256SUMS-windows-x86_64.txt upload/
+          cat upload/SHA256SUMS-windows-x86_64.txt | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Add to release 9.0.2-lgpl2 (new names only; never deletes, never replaces)
+        run: |
+          set -euo pipefail
+          existing="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          echo "release $RELEASE_TAG has today:"; echo "$existing"
+          for f in upload/*; do
+            if grep -qxF -- "$(basename "$f")" <<<"$existing"; then
+              echo "REFUSING: $(basename "$f") is already on $RELEASE_TAG (this workflow never replaces an asset)"
+              exit 1
+            fi
+          done
+          gh release upload "$RELEASE_TAG" upload/*
+          echo "release $RELEASE_TAG now (name, bytes, GitHub digest, uploader):"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" --jq '.assets[] | "\(.name)  \(.size)  \(.digest)  \(.uploader.login)"'

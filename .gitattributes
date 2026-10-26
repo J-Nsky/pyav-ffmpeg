@@ -1,0 +1,2 @@
+# MDB lgpl2: the pinned copies + SHA-256 lists are byte-checked in CI (windows runners check out with autocrlf)
+scripts/mdb/** -text

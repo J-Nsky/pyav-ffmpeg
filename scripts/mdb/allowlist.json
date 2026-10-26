@@ -1,0 +1,47 @@
+{
+  "_about": "MyDancingBook's FFmpeg allow-list (E2, session 198; research docs/research/2026-10-23-python-vs-rust-and-stack-security.md, his answer 2026-10-23: before the RC). The ONE place that says which decoders, demuxers, parsers, muxers and protocols our LGPL PyAV FFmpeg build contains. tools/ffmpeg/ffmpeg_allowlist.py turns it into configure flags and checks a build against it; build.py's [gate] FFmpeg allow-list refuses a release whose bundled PyAV knows anything more.",
+  "why": "Media decoders are C code that parses files from OTHER dancers (.mdbshare, synced folders, downloads). Every decoder we do not ship is a bug class we cannot have (CVE-2026-66039 is in the MACE6 decoder, reached through a CAF file: neither is here).",
+  "ffmpeg": {
+    "base": "9.0.2 release tarball",
+    "base_note": "His Q2 answer (2026-10-23) was the 9.0 branch head, fallback 8.1.3 + cherry-pick aafb5c65. Correction 2026-10-24 (session 205, docs/research/2026-10-24-ffmpeg-p03-sources-triple-check.md §0): the MACE6 fix 947c57d9 is in the signed 9.0, 9.0.1 and 9.0.2 releases and its backport 228fd8f0 in 8.1.3, so the base is the signed 9.0.2 release tarball and the fallback (only if PyAV 18.1.0 fails on 9.0.2) is the 8.1.3 tarball with NO cherry-pick. tools/ffmpeg/build_linux_wheel.sh reads the SHA-256s below; tests/test_ffmpeg_build_script.py holds them equal to the research doc's §8 table.",
+    "tarballs": {
+      "ffmpeg-9.0.2.tar.xz": {"role": "base", "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz", "size": 12040788,
+                              "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e"},
+      "ffmpeg-8.1.3.tar.xz": {"role": "fallback", "url": "https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz", "size": 11732036,
+                              "sha256": "7138d28c96d9d3e3af4ee3d8cad72741f8ffb40da90c1112235dea3ecd3178a3"},
+      "dav1d-1.5.3.tar.bz2": {"role": "dav1d", "url": "https://code.videolan.org/videolan/dav1d/-/archive/1.5.3/dav1d-1.5.3.tar.bz2", "size": 1217030,
+                              "sha256": "e099f53253f6c247580c554d53a13f1040638f2066edc3c740e4c2f15174ce22"}
+    },
+    "open_cves": ["CVE-2026-107678 (mov pssh stack exhaustion, DoS; no fix yet)", "CVE-2026-107676 (<= 3 uninitialised bytes into a remuxed file; master 2c2f6e96 only)"],
+    "libavcodec_min": [63, 1],
+    "note": "3.248.0 (P0-3 lock landing): [63, 1] = the built 9.0.2 library (libavcodec 63.1.102, the lgpl2 wheel's smoke test, toolchain doc §11); the gate refuses an older libavcodec unless --allow-full-ffmpeg (the Mac / Windows lgpl1 builds until their lgpl2 wheels exist, his Q3 fallback)"
+  },
+  "decoders": {
+    "video": ["h264", "hevc", "libdav1d", "vp8", "vp9", "mpeg4"],
+    "audio": ["aac", "mp3", "mp3float", "opus", "vorbis", "flac", "alac",
+              "pcm_s16le", "pcm_s16be", "pcm_s24le", "pcm_s24be", "pcm_s32le", "pcm_f32le", "pcm_u8"]
+  },
+  "demuxers": ["mov", "matroska", "avi", "mp3", "aac", "ogg", "flac", "wav", "aiff"],
+  "parsers": ["h264", "hevc", "av1", "vp8", "vp9", "mpeg4video", "aac", "mpegaudio", "opus", "vorbis", "flac"],
+  "muxers": ["mp4", "mov", "webm"],
+  "protocols": ["file"],
+  "filters": ["abuffer", "abuffersink", "aformat", "aresample"],
+  "filters_note": "3.228.1 (P0-3 build lane): PyAV's own av.AudioResampler is a filter graph abuffer -> [aresample] -> aformat -> abuffersink (PyAV 18.1.0 av/audio/resampler.py); services/phone_audio_copy.py and services/beat_detect/decode.py use it. --disable-everything turns every filter off, so these four are enabled by name. They read DECODED frames only, never a file. Bitstream filters need no entry: configure selects the ones the mov / webm muxers name (aac_adtstoasc, vp9_superframe).",
+  "external_libraries": ["libdav1d", "zlib"],
+  "implied": {
+    "_note": "3.228.3 (the first allow-list build, FFmpeg 9.0.2): names FFmpeg turns on itself because an allowed name needs them. Never configure flags of ours; ffmpeg_allowlist.py accepts them and prints them as 'implied', so a NEW extra still fails. Bitstream filters (not checked: PyAV lists them, they rewrite packets of allowed codecs) come the same way: aac_adtstoasc + vp9_superframe (mov_muxer_select), vp9_superframe_split (vp9_decoder_select).",
+    "decoders": {"h263": "the mpeg4 decoder is built on it (configure: mpeg4_decoder_select=\"h263_decoder qpeldsp\")"},
+    "filters": {"buffer": "libavfilter builds it beside abuffer", "buffersink": "libavfilter builds it beside abuffersink"}
+  },
+  "candidates_not_enabled": {
+    "_note": "Seen in dance videos from phones and cameras but NOT in his list; the matrix test on synthetic clips (docs/research/m8-lgpl-spike/matrix_check.py) decides, one row per codec, before the RC build",
+    "decoders": ["mjpeg", "png", "ac3", "eac3", "pcm_alaw", "pcm_mulaw"],
+    "demuxers": ["mpegts", "mpegps", "wtv"]
+  },
+  "never": {
+    "_note": "Named so nobody adds them back by accident",
+    "decoders": ["mace3", "mace6", "cfhd", "tiff", "sonic", "aac_fixed", "ac3_fixed", "mp3adu", "mp3on4"],
+    "demuxers": ["caf", "image2", "concat", "hls", "dash", "rtsp", "sdp", "data"],
+    "protocols": ["http", "https", "tcp", "udp", "rtp", "pipe", "concat", "data", "subfile", "crypto"]
+  }
+}
