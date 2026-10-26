@@ -23,6 +23,7 @@ KINDS = {"DECODER": "decoders", "DEMUXER": "demuxers", "MUXER": "muxers",
          "PARSER": "parsers", "PROTOCOL": "protocols", "FILTER": "filters"}
 # kinds that must be empty in this build
 MUST_BE_EMPTY = ("ENCODER", "HWACCEL", "INDEV", "OUTDEV")
+ALWAYS_BUILT_FILTERS = {"abuffer", "abuffersink", "buffer", "buffersink"}
 
 
 def enabled(components_h: str) -> dict:
@@ -70,6 +71,13 @@ def main() -> int:
         print(f"[mdb] {suffix.lower()}s enabled: {len(names)}")
         if names:
             bad.append(f"{suffix.lower()}s present: {names}")
+
+    # abuffer / abuffersink (and buffer / buffersink) are always built: libavfilter/allfilters.c
+    # declares them "extern  const" (two blanks), outside the sed that makes configure's
+    # FILTER_LIST, so config_components.h has no CONFIG_ line for them and --enable-filter=abuffer
+    # matches nothing. PyAV still lists them (the Linux wheel: 6 filters). A note, not a problem.
+    always = sorted(ALWAYS_BUILT_FILTERS & ffmpeg_allowlist.allowed(data, "filters"))
+    print("[mdb] filters always built by libavfilter (no CONFIG_ line): " + " ".join(always))
 
     by_kind = {kind: found.get(suffix, set()) for suffix, kind in KINDS.items()}
     if not ffmpeg_allowlist.report(by_kind, data, "[mdb] this build against allowlist.json:"):

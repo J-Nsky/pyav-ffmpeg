@@ -31,6 +31,7 @@
   "implied": {
     "_note": "3.228.3 (the first allow-list build, FFmpeg 9.0.2): names FFmpeg turns on itself because an allowed name needs them. Never configure flags of ours; ffmpeg_allowlist.py accepts them and prints them as 'implied', so a NEW extra still fails. Bitstream filters (not checked: PyAV lists them, they rewrite packets of allowed codecs) come the same way: aac_adtstoasc + vp9_superframe (mov_muxer_select), vp9_superframe_split (vp9_decoder_select).",
     "decoders": {"h263": "the mpeg4 decoder is built on it (configure: mpeg4_decoder_select=\"h263_decoder qpeldsp\")"},
+    "parsers": {"ac3": "the allowed mov muxer selects it (configure: mov_muxer_select=\"... aac_adtstoasc_bsf ac3_parser\", mp4_muxer_select=\"mov_muxer\"); --disable-parser=ac3 would turn the mov and mp4 muxers off (check_deps: a disabled selected dependency disables the component). In every lgpl2 build: the shipped Linux libavcodec 63.1.102 has 12 parsers, ac3/eac3 among them (av_parser_iterate, 3.280.2)"},
     "filters": {"buffer": "libavfilter builds it beside abuffer", "buffersink": "libavfilter builds it beside abuffersink"}
   },
   "candidates_not_enabled": {

@@ -2,5 +2,5 @@
 e099f53253f6c247580c554d53a13f1040638f2066edc3c740e4c2f15174ce22  source/dav1d-1.5.3.tar.bz2
 c42296f12db316a4515b9375a5df330f2e751ccdd4f608430d41d7d6210e4317  tools-dl/meson-1.10.1.tar.gz
 07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65  tools-dl/ninja-win.zip
-7442c1e69dfc59fb7845047ae78f03b45ee6a38aa2e89282ac3418ed5bf5832f  scripts/mdb/allowlist.json
+83ec769c20f383bacbd198d4bf2c3ff95c62b6fc3d54072f4567fffa77184bed  scripts/mdb/allowlist.json
 4dc6360cb04a00255c8f73f74cae2e3b00a06e89cc5ec20889ddc38945fab6fa  scripts/mdb/ffmpeg_allowlist.py
